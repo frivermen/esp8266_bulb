@@ -24,6 +24,10 @@ struct Settings {
   uint16_t warm = 200;  // По умолчанию warm на 200
 };
 
+uint32_t turnOffTimer = 0;
+bool turnOffStarted = false;
+bool turnOff = false;
+
 Settings settings;
 ESP8266WebServer server(80);
 
@@ -44,6 +48,8 @@ const char* htmlPage = R"rawliteral(
     .btn { padding: 12px; border: none; border-radius: 5px; cursor: pointer; flex: 1; font-size: 16px; }
     .apply-btn { background: #4CAF50; color: white; }
     .setup-btn { background: #9E9E9E; color: white; }
+    .off-btn { background: #8E8E8E; color: white; }
+    .off30-btn { background: #AEAEAE; color: white; }
     .setup-section { display: none; margin: 20px 0; padding: 15px; background: #e9e9e9; border-radius: 5px; }
     input[type="text"], input[type="password"] { width: 100%; padding: 8px; margin: 5px 0; box-sizing: border-box; }
     .ota-section { margin-top: 15px; }
@@ -76,6 +82,11 @@ const char* htmlPage = R"rawliteral(
     <div class="slider-container">
       <label>Warm White: <span id="warmValue">200</span></label>
       <input type="range" min="0" max="1023" value="200" class="slider" id="warmSlider">
+    </div>
+
+    <div class="button-row">
+      <button class="btn off-btn" onclick="turnOff()">Off</button>
+      <button class="btn off30-btn" onclick="turnOff30()">Off 30</button>
     </div>
     
     <div class="button-row">
@@ -184,6 +195,30 @@ const char* htmlPage = R"rawliteral(
         alert('Please enter WiFi name');
       }
     }
+        
+    function turnOff() {
+      fetch('/off')
+        .then(() => {
+          // Сбрасываем слайдеры
+          sliders.forEach(color => {
+            document.getElementById(color + 'Slider').value = 0;
+            document.getElementById(color + 'Value').textContent = 0;
+          });
+        });
+    }
+
+    function turnOff30() {
+      fetch('/off30')
+        .then(() => {
+          // Можно добавить визуальное подтверждение
+          const btn = document.querySelector('.off30-btn');
+          const originalText = btn.textContent;
+          btn.textContent = 'Timer set!';
+          setTimeout(() => {
+            btn.textContent = originalText;
+          }, 1000);
+        });
+    }
   </script>
 </body>
 </html>
@@ -251,6 +286,16 @@ void handleGet() {
   json += "\"w\":" + String(settings.warm);
   json += "}";
   server.send(200, "application/json", json);
+}
+
+void handleOff() {
+  setLeds(0, 0, 0, 0, 0);
+  server.send(200, "text/plain", "OK");
+}
+
+void handleOff30() {
+  turnOff = true;
+  server.send(200, "text/plain", "OK");
 }
 
 void handleSave() {
@@ -330,6 +375,8 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/set", handleSet);
   server.on("/get", handleGet);
+  server.on("/off", handleOff);
+  server.on("/off30", handleOff30);
   server.on("/wifi", handleWiFi);
   server.on("/save", handleSave);
   server.onNotFound(handleRoot);
@@ -353,6 +400,15 @@ void setup() {
 }
 
 void loop() {
+  if (turnOff) {
+    turnOffTimer = millis();
+    turnOffStarted = true;
+    turnOff = false;
+  }
+  if (turnOffStarted && millis() - turnOffTimer > 30000) {
+    turnOffStarted = false;
+    setLeds(0, 0, 0, 0, 0);
+  }
   server.handleClient();
   ArduinoOTA.handle();
   delay(10);
